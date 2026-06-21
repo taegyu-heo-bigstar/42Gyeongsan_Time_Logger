@@ -221,5 +221,4 @@ def day_logs(
     return {
         "work_date": work_date.isoformat(),
         "logs": res.data or [],
-    }t.data or [],
     }

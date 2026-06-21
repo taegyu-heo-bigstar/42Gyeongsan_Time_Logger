@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calendar | 42Gyeongsan Time Logger</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">42Gyeongsan</p>
+        <h1>작업 시간 캘린더</h1>
+      </div>
+      <button id="logoutBtn" class="ghost-button" type="button">로그아웃</button>
+    </header>
+
+    <section class="status-panel">
+      <div>
+        <p class="panel-label">현재 상태</p>
+        <h2 id="runningStatus">확인 중...</h2>
+        <p id="runningDetail" class="muted"></p>
+      </div>
+
+      <div class="actions">
+        <button id="startBtn" class="primary-button" type="button">로그 시작</button>
+        <button id="stopBtn" class="danger-button" type="button">로그 종료</button>
+      </div>
+    </section>
+
+    <section class="calendar-panel">
+      <div class="calendar-header">
+        <button id="prevMonthBtn" class="icon-button" type="button" aria-label="이전 달">‹</button>
+        <h2 id="monthTitle"></h2>
+        <button id="nextMonthBtn" class="icon-button" type="button" aria-label="다음 달">›</button>
+      </div>
+
+      <div class="weekdays">
+        <span>일</span>
+        <span>월</span>
+        <span>화</span>
+        <span>수</span>
+        <span>목</span>
+        <span>금</span>
+        <span>토</span>
+      </div>
+
+      <div id="calendarGrid" class="calendar-grid"></div>
+    </section>
+
+    <section class="day-panel">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">선택한 날짜</p>
+          <h2 id="selectedDateTitle"></h2>
+        </div>
+        <p id="dayTotal" class="total-badge"></p>
+      </div>
+
+      <div id="dayLogs" class="log-list"></div>
+    </section>
+
+    <p id="appMessage" class="message" aria-live="polite"></p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
