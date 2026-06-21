@@ -222,3 +222,25 @@ def day_logs(
         "work_date": work_date.isoformat(),
         "logs": res.data or [],
     }
+
+@app.get("/debug/db")
+def debug_db(_: None = Depends(check_admin)):
+    try:
+        res = (
+            db.table("time_logs")
+            .select("*")
+            .limit(1)
+            .execute()
+        )
+
+        return {
+            "ok": True,
+            "data": res.data,
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "error_type": type(e).__name__,
+            "error": str(e),
+        }
