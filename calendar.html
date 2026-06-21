@@ -3,65 +3,62 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Calendar | 42Gyeongsan Time Logger</title>
+  <title>캘린더 | 42Gyeongsan Time Logger</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">42Gyeongsan</p>
-        <h1>작업 시간 캘린더</h1>
-      </div>
-      <button id="logoutBtn" class="ghost-button" type="button">로그아웃</button>
+  <main class="calendar-page">
+    <header class="calendar-top">
+      <button id="prevMonthBtn" class="month-nav left" type="button">
+        <span class="nav-arrow">‹</span>
+        <span id="prevMonthLabel">이전</span>
+      </button>
+
+      <h1 id="monthTitle" class="month-title">6월</h1>
+
+      <button id="nextMonthBtn" class="month-nav right" type="button">
+        <span id="nextMonthLabel">다음</span>
+        <span class="nav-arrow">›</span>
+      </button>
     </header>
 
-    <section class="status-panel">
-      <div>
-        <p class="panel-label">현재 상태</p>
-        <h2 id="runningStatus">확인 중...</h2>
-        <p id="runningDetail" class="muted"></p>
-      </div>
-
-      <div class="actions">
-        <button id="startBtn" class="primary-button" type="button">로그 시작</button>
-        <button id="stopBtn" class="danger-button" type="button">로그 종료</button>
-      </div>
-    </section>
-
-    <section class="calendar-panel">
-      <div class="calendar-header">
-        <button id="prevMonthBtn" class="icon-button" type="button" aria-label="이전 달">‹</button>
-        <h2 id="monthTitle"></h2>
-        <button id="nextMonthBtn" class="icon-button" type="button" aria-label="다음 달">›</button>
-      </div>
-
-      <div class="weekdays">
-        <span>일</span>
-        <span>월</span>
-        <span>화</span>
-        <span>수</span>
-        <span>목</span>
-        <span>금</span>
-        <span>토</span>
+    <section class="calendar-card">
+      <div class="weekday-row">
+        <div class="weekday sunday">일</div>
+        <div class="weekday">월</div>
+        <div class="weekday">화</div>
+        <div class="weekday">수</div>
+        <div class="weekday">목</div>
+        <div class="weekday">금</div>
+        <div class="weekday saturday">토</div>
       </div>
 
       <div id="calendarGrid" class="calendar-grid"></div>
     </section>
 
-    <section class="day-panel">
-      <div class="section-heading">
-        <div>
-          <p class="panel-label">선택한 날짜</p>
-          <h2 id="selectedDateTitle"></h2>
-        </div>
-        <p id="dayTotal" class="total-badge"></p>
+    <section class="control-panel">
+      <div class="selected-date-box">
+        <span class="selected-label">선택 날짜</span>
+        <strong id="selectedDateTitle">-</strong>
       </div>
 
-      <div id="dayLogs" class="log-list"></div>
+      <div class="button-row">
+        <button id="startBtn" class="start-button" type="button">로그 시작</button>
+        <button id="stopBtn" class="stop-button" type="button">로그 종료</button>
+      </div>
+
+      <p id="runningStatus" class="running-status">상태 확인 중...</p>
     </section>
 
-    <p id="appMessage" class="message" aria-live="polite"></p>
+    <section class="total-card">
+      <span class="clock-icon">◷</span>
+      <span id="monthTotal">합계 시간 : 0시간 0분 0초</span>
+    </section>
+
+    <footer class="footer-bar">
+      <button id="logoutBtn" class="logout-button" type="button">로그아웃</button>
+      <p id="appMessage" class="message" aria-live="polite"></p>
+    </footer>
   </main>
 
   <script src="app.js"></script>

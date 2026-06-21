@@ -52,22 +52,21 @@ function pad2(value) {
   return String(value).padStart(2, "0");
 }
 
+function toDateKey(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
 function dateKey(year, monthIndex, day) {
   return `${year}-${pad2(monthIndex + 1)}-${pad2(day)}`;
 }
 
 function todayKey() {
-  const now = new Date();
-  return dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  return toDateKey(new Date());
 }
 
-function formatDateTime(value) {
-  if (!value) return "-";
-
-  return new Date(value).toLocaleString("ko-KR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
+function formatDateKorean(dateString) {
+  const d = new Date(`${dateString}T00:00:00`);
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
 function formatTime(value) {
@@ -76,10 +75,21 @@ function formatTime(value) {
   return new Date(value).toLocaleTimeString("ko-KR", {
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 
 function formatDuration(seconds) {
+  seconds = Number(seconds || 0);
+
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+
+  return `${h}시간 ${m}분 ${s}초`;
+}
+
+function formatDurationShort(seconds) {
   seconds = Number(seconds || 0);
 
   const h = Math.floor(seconds / 3600);
@@ -101,6 +111,7 @@ function setMessage(text, isError = true) {
   target.style.color = isError ? "#dc2626" : "#2563eb";
 }
 
+/* login page */
 function setupLoginPage() {
   const form = $("#loginForm");
 
@@ -134,6 +145,7 @@ function setupLoginPage() {
   });
 }
 
+/* calendar page */
 let currentYear;
 let currentMonthIndex;
 let selectedDate = todayKey();
@@ -199,9 +211,10 @@ async function refreshAll() {
     monthLogs = monthData.logs || [];
     currentLog = currentData.current_log;
 
+    renderHeader();
     renderStatus();
     renderCalendar();
-    await renderSelectedDay();
+    renderMonthTotal(monthData.total_duration_seconds || 0);
   } catch (error) {
     setMessage(error.message);
 
@@ -211,148 +224,195 @@ async function refreshAll() {
   }
 }
 
+function renderHeader() {
+  const monthTitle = $("#monthTitle");
+  const prevMonthLabel = $("#prevMonthLabel");
+  const nextMonthLabel = $("#nextMonthLabel");
+  const selectedDateTitle = $("#selectedDateTitle");
+
+  monthTitle.textContent = `${currentMonthIndex + 1}월`;
+
+  const prev = new Date(currentYear, currentMonthIndex - 1, 1);
+  const next = new Date(currentYear, currentMonthIndex + 1, 1);
+
+  prevMonthLabel.textContent = `${prev.getMonth() + 1}월`;
+  nextMonthLabel.textContent = `${next.getMonth() + 1}월`;
+  selectedDateTitle.textContent = formatDateKorean(selectedDate);
+}
+
 function renderStatus() {
   const runningStatus = $("#runningStatus");
-  const runningDetail = $("#runningDetail");
   const startBtn = $("#startBtn");
   const stopBtn = $("#stopBtn");
 
   if (currentLog) {
-    runningStatus.textContent = "작업 기록 중";
-    runningDetail.textContent = `시작: ${formatDateTime(currentLog.start_time)} / 작업일: ${currentLog.work_date}`;
+    runningStatus.textContent = `진행 중: ${currentLog.work_date} ${formatTime(currentLog.start_time)} 시작`;
     startBtn.disabled = true;
     stopBtn.disabled = false;
   } else {
-    runningStatus.textContent = "대기 중";
-    runningDetail.textContent = "진행 중인 작업 로그가 없습니다.";
+    runningStatus.textContent = "현재 진행 중인 로그가 없습니다.";
     startBtn.disabled = false;
     stopBtn.disabled = true;
   }
 }
 
+function renderMonthTotal(totalSeconds) {
+  $("#monthTotal").textContent = `합계 시간 : ${formatDuration(totalSeconds)}`;
+}
+
+function groupLogsByDate() {
+  const map = new Map();
+
+  for (const log of monthLogs) {
+    if (!map.has(log.work_date)) {
+      map.set(log.work_date, []);
+    }
+
+    map.get(log.work_date).push(log);
+  }
+
+  return map;
+}
+
 function renderCalendar() {
   const grid = $("#calendarGrid");
-  const monthTitle = $("#monthTitle");
+  const logsByDate = groupLogsByDate();
 
   grid.innerHTML = "";
 
-  monthTitle.textContent = `${currentYear}년 ${currentMonthIndex + 1}월`;
-
-  const first = new Date(currentYear, currentMonthIndex, 1);
-  const firstDay = first.getDay();
+  const firstDate = new Date(currentYear, currentMonthIndex, 1);
+  const firstDayIndex = firstDate.getDay();
   const lastDate = new Date(currentYear, currentMonthIndex + 1, 0).getDate();
 
-  const logsByDate = new Map();
+  const prevMonthLastDate = new Date(currentYear, currentMonthIndex, 0).getDate();
 
-  for (const log of monthLogs) {
-    const key = log.work_date;
-
-    if (!logsByDate.has(key)) {
-      logsByDate.set(key, []);
-    }
-
-    logsByDate.get(key).push(log);
-  }
-
-  for (let i = 0; i < firstDay; i++) {
-    const empty = document.createElement("button");
-    empty.className = "day-cell empty";
-    empty.type = "button";
-    empty.disabled = true;
-    grid.appendChild(empty);
+  for (let i = firstDayIndex - 1; i >= 0; i--) {
+    const day = prevMonthLastDate - i;
+    const cell = makeDayCell({
+      day,
+      key: null,
+      logs: [],
+      otherMonth: true,
+      dayIndex: null,
+    });
+    grid.appendChild(cell);
   }
 
   for (let day = 1; day <= lastDate; day++) {
     const key = dateKey(currentYear, currentMonthIndex, day);
+    const dayIndex = new Date(currentYear, currentMonthIndex, day).getDay();
     const logs = logsByDate.get(key) || [];
-    const total = logs.reduce((sum, log) => {
-      return sum + Number(log.duration_seconds || 0);
-    }, 0);
 
-    const hasRunning =
-      logs.some((log) => log.status === "RUNNING") ||
-      currentLog?.work_date === key;
-
-    const cell = document.createElement("button");
-    cell.type = "button";
-    cell.className = "day-cell";
-
-    if (key === todayKey()) {
-      cell.classList.add("today");
-    }
-
-    if (key === selectedDate) {
-      cell.classList.add("selected");
-    }
-
-    cell.innerHTML = `
-      <span class="day-number">${day}</span>
-      <span class="day-meta">
-        ${total ? `<span>${formatDuration(total)}</span>` : "<span>기록 없음</span>"}
-        ${hasRunning ? `<span class="running-chip">RUNNING</span>` : ""}
-      </span>
-    `;
-
-    cell.addEventListener("click", async () => {
-      selectedDate = key;
-      renderCalendar();
-      await renderSelectedDay();
+    const cell = makeDayCell({
+      day,
+      key,
+      logs,
+      otherMonth: false,
+      dayIndex,
     });
 
     grid.appendChild(cell);
   }
+
+  const currentCells = grid.children.length;
+  const remaining = currentCells <= 35 ? 35 - currentCells : 42 - currentCells;
+
+  for (let day = 1; day <= remaining; day++) {
+    const cell = makeDayCell({
+      day,
+      key: null,
+      logs: [],
+      otherMonth: true,
+      dayIndex: null,
+    });
+    grid.appendChild(cell);
+  }
 }
 
-async function renderSelectedDay() {
-  const title = $("#selectedDateTitle");
-  const total = $("#dayTotal");
-  const list = $("#dayLogs");
+function makeDayCell({ day, key, logs, otherMonth, dayIndex }) {
+  const cell = document.createElement("button");
+  cell.type = "button";
+  cell.className = "day-cell";
 
-  title.textContent = selectedDate;
-  list.innerHTML = "불러오는 중...";
-
-  try {
-    const data = await api(`/logs/day?work_date=${selectedDate}`);
-    const logs = data.logs || [];
-
-    const totalSeconds = logs.reduce((sum, log) => {
-      return sum + Number(log.duration_seconds || 0);
-    }, 0);
-
-    total.textContent = `합계 ${formatDuration(totalSeconds)}`;
-
-    if (logs.length === 0) {
-      list.innerHTML = `<p class="muted">해당 날짜의 기록이 없습니다.</p>`;
-      return;
-    }
-
-    list.innerHTML = logs.map((log) => {
-      const statusClass =
-        log.status === "RUNNING"
-          ? "running"
-          : log.status === "AUTO_STOPPED"
-            ? "auto"
-            : "completed";
-
-      const endText = log.end_time ? formatTime(log.end_time) : "진행 중";
-
-      const durationText = log.duration_seconds
-        ? formatDuration(log.duration_seconds)
-        : "계산 전";
-
-      return `
-        <article class="log-item">
-          <div>
-            <div class="log-time">${formatTime(log.start_time)} ~ ${endText}</div>
-            <div class="log-duration">${durationText}</div>
-          </div>
-          <span class="status-chip ${statusClass}">${log.status}</span>
-        </article>
-      `;
-    }).join("");
-  } catch (error) {
-    list.innerHTML = `<p class="message">${error.message}</p>`;
+  if (otherMonth) {
+    cell.classList.add("empty", "other-month");
   }
+
+  if (!otherMonth && key === selectedDate) {
+    cell.classList.add("selected");
+  }
+
+  if (!otherMonth && key === todayKey()) {
+    cell.classList.add("today");
+  }
+
+  if (!otherMonth && dayIndex === 0) {
+    cell.classList.add("sunday");
+  }
+
+  if (!otherMonth && dayIndex === 6) {
+    cell.classList.add("saturday");
+  }
+
+  const logRows = makeLogRows(logs, key);
+
+  cell.innerHTML = `
+    <span class="day-number">${day}</span>
+    <div class="log-stack">${logRows}</div>
+  `;
+
+  if (!otherMonth) {
+    cell.addEventListener("click", () => {
+      selectedDate = key;
+      renderHeader();
+      renderCalendar();
+    });
+  } else {
+    cell.disabled = true;
+  }
+
+  return cell;
+}
+
+function makeLogRows(logs, key) {
+  const allLogs = [...logs];
+
+  if (
+    currentLog &&
+    currentLog.work_date === key &&
+    !allLogs.some((log) => log.id === currentLog.id)
+  ) {
+    allLogs.push(currentLog);
+  }
+
+  if (allLogs.length === 0) {
+    return "";
+  }
+
+  const visibleLogs = allLogs.slice(0, 3);
+  const hiddenCount = allLogs.length - visibleLogs.length;
+
+  const rows = visibleLogs.map((log) => {
+    const statusClass =
+      log.status === "RUNNING"
+        ? "running"
+        : log.status === "AUTO_STOPPED"
+          ? "auto"
+          : "completed";
+
+    const text =
+      log.status === "RUNNING"
+        ? `${formatTime(log.start_time)} ~ 진행 중`
+        : `${formatTime(log.start_time)} · ${formatDurationShort(log.duration_seconds)}`;
+
+    return `<span class="log-row ${statusClass}" title="${text}">${text}</span>`;
+  });
+
+  if (hiddenCount > 0) {
+    rows.push(`<span class="more-log">+${hiddenCount}개 더</span>`);
+  }
+
+  return rows.join("");
 }
 
 async function startLog() {
