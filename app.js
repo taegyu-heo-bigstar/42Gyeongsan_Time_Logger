@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "42-gyeongsan-time-logger-fi688ghoq-taegyu-heo-bigstars-projects.vercel.app";
 const PASSWORD_KEY = "time_logger_admin_password";
 
 const $ = (selector) => document.querySelector(selector);
