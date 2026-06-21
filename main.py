@@ -56,14 +56,21 @@ def local_date(dt):
 
 
 def get_running_log():
-    res = (
-        db.table("time_logs")
-        .select("*")
-        .eq("status", "RUNNING")
-        .limit(1)
-        .execute()
-    )
-    return res.data[0] if res.data else None
+    try:
+        res = (
+            db.table("time_logs")
+            .select("*")
+            .eq("status", "RUNNING")
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Supabase running log 조회 실패: {type(e).__name__}: {str(e)}"
+        )
 
 
 def auto_stop_if_needed():
@@ -127,17 +134,24 @@ def start_log(
     work_date = data.work_date if data and data.work_date else local_date(now_utc())
     now = now_utc()
 
-    res = (
-        db.table("time_logs")
-        .insert({
-            "work_date": work_date.isoformat(),
-            "start_time": now.isoformat(),
-            "status": "RUNNING",
-        })
-        .execute()
-    )
+    try:
+        res = (
+            db.table("time_logs")
+            .insert({
+                "work_date": work_date.isoformat(),
+                "start_time": now.isoformat(),
+                "status": "RUNNING",
+            })
+            .execute()
+        )
 
-    return res.data[0]
+        return res.data[0]
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Supabase 로그 시작 실패: {type(e).__name__}: {str(e)}"
+        )
 
 
 @app.post("/logs/stop")
