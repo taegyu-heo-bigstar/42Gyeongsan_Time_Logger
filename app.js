@@ -27,10 +27,16 @@ async function api(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
+  let response;
+
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    throw new Error(`${API_BASE}${path} 요청 실패`);
+  }
 
   let data = null;
 
@@ -200,6 +206,12 @@ async function setupCalendarPage() {
 }
 
 async function refreshAll() {
+  // API가 실패하더라도 월/날짜 UI는 먼저 그린다.
+  renderHeader();
+  renderStatus();
+  renderCalendar();
+  renderMonthTotal(0);
+
   try {
     setMessage("");
 
@@ -216,7 +228,11 @@ async function refreshAll() {
     renderCalendar();
     renderMonthTotal(monthData.total_duration_seconds || 0);
   } catch (error) {
-    setMessage(error.message);
+    renderHeader();
+    renderStatus();
+    renderCalendar();
+
+    setMessage(`백엔드 연결 실패: ${error.message}`);
 
     if (error.message.includes("비밀번호") || error.message.includes("401")) {
       clearPassword();
