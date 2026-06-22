@@ -1,27 +1,9 @@
-const API_BASE = "https://42-gyeongsan-time-logger.vercel.app";
-const PASSWORD_KEY = "time_logger_admin_password";
+const API_BASE = "";
 
 const $ = (selector) => document.querySelector(selector);
 
-function getPassword() {
-  return sessionStorage.getItem(PASSWORD_KEY) || "";
-}
-
-function setPassword(password) {
-  sessionStorage.setItem(PASSWORD_KEY, password);
-}
-
-function clearPassword() {
-  sessionStorage.removeItem(PASSWORD_KEY);
-}
-
 async function api(path, options = {}) {
   const headers = options.headers || {};
-  const password = getPassword();
-
-  if (options.auth !== false) {
-    headers["X-Admin-Password"] = password;
-  }
 
   if (options.body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
@@ -33,6 +15,7 @@ async function api(path, options = {}) {
     response = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers,
+      credentials: "include",
     });
   } catch (error) {
     throw new Error(`${API_BASE}${path} 요청 실패`);
@@ -48,7 +31,9 @@ async function api(path, options = {}) {
 
   if (!response.ok) {
     const message = data?.detail || `요청 실패: ${response.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -132,6 +117,7 @@ function setupLoginPage() {
     try {
       const response = await fetch(`${API_BASE}/login`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -143,7 +129,6 @@ function setupLoginPage() {
         throw new Error(data?.detail || "로그인 실패");
       }
 
-      setPassword(password);
       location.href = "calendar.html";
     } catch (error) {
       setMessage(error.message);
@@ -155,7 +140,7 @@ function setupLoginPage() {
 let currentYear;
 let currentMonthIndex;
 let selectedDate = todayKey();
-let monthLogs = [];
+let monthDays = [];
 let currentLog = null;
 let actionPending = false;
 let pendingDeleteLogId = null;
@@ -163,7 +148,9 @@ let pendingDeleteLogId = null;
 async function setupCalendarPage() {
   if (!$("#calendarGrid")) return;
 
-  if (!getPassword()) {
+  try {
+    await api("/session");
+  } catch {
     location.href = "index.html";
     return;
   }
@@ -172,9 +159,12 @@ async function setupCalendarPage() {
   currentYear = now.getFullYear();
   currentMonthIndex = now.getMonth();
 
-  $("#logoutBtn").addEventListener("click", () => {
-    clearPassword();
-    location.href = "index.html";
+  $("#logoutBtn").addEventListener("click", async () => {
+    try {
+      await api("/logout", { method: "POST" });
+    } finally {
+      location.href = "index.html";
+    }
   });
 
   $("#prevMonthBtn").addEventListener("click", async () => {
@@ -239,12 +229,12 @@ async function refreshAll() {
   try {
     setMessage("");
 
-    const [monthData, currentData] = await Promise.all([
-      api(`/logs/month?year=${currentYear}&month=${currentMonthIndex + 1}`),
-      api("/logs/current"),
-    ]);
+    const currentData = await api("/logs/current");
+    const monthData = await api(
+      `/logs/month?year=${currentYear}&month=${currentMonthIndex + 1}`,
+    );
 
-    monthLogs = monthData.logs || [];
+    monthDays = monthData.days || [];
     currentLog = currentData.current_log;
 
     renderHeader();
@@ -258,8 +248,7 @@ async function refreshAll() {
 
     setMessage(`백엔드 연결 실패: ${error.message}`);
 
-    if (error.message.includes("비밀번호") || error.message.includes("401")) {
-      clearPassword();
+    if (error.status === 401) {
       location.href = "index.html";
     }
   }
@@ -301,15 +290,11 @@ function renderMonthTotal(totalSeconds) {
   $("#monthTotal").textContent = `합계 시간 : ${formatDuration(totalSeconds)}`;
 }
 
-function groupLogsByDate() {
+function groupDaysByDate() {
   const map = new Map();
 
-  for (const log of monthLogs) {
-    if (!map.has(log.work_date)) {
-      map.set(log.work_date, []);
-    }
-
-    map.get(log.work_date).push(log);
+  for (const day of monthDays) {
+    map.set(day.work_date, day);
   }
 
   return map;
@@ -317,7 +302,7 @@ function groupLogsByDate() {
 
 function renderCalendar() {
   const grid = $("#calendarGrid");
-  const logsByDate = groupLogsByDate();
+  const daysByDate = groupDaysByDate();
 
   grid.innerHTML = "";
 
@@ -332,7 +317,7 @@ function renderCalendar() {
     const cell = makeDayCell({
       day,
       key: null,
-      logs: [],
+      summary: null,
       otherMonth: true,
       dayIndex: null,
     });
@@ -342,12 +327,12 @@ function renderCalendar() {
   for (let day = 1; day <= lastDate; day++) {
     const key = dateKey(currentYear, currentMonthIndex, day);
     const dayIndex = new Date(currentYear, currentMonthIndex, day).getDay();
-    const logs = logsByDate.get(key) || [];
+    const summary = daysByDate.get(key) || null;
 
     const cell = makeDayCell({
       day,
       key,
-      logs,
+      summary,
       otherMonth: false,
       dayIndex,
     });
@@ -362,7 +347,7 @@ function renderCalendar() {
     const cell = makeDayCell({
       day,
       key: null,
-      logs: [],
+      summary: null,
       otherMonth: true,
       dayIndex: null,
     });
@@ -370,7 +355,7 @@ function renderCalendar() {
   }
 }
 
-function makeDayCell({ day, key, logs, otherMonth, dayIndex }) {
+function makeDayCell({ day, key, summary, otherMonth, dayIndex }) {
   const cell = document.createElement("button");
   cell.type = "button";
   cell.className = "day-cell";
@@ -395,7 +380,7 @@ function makeDayCell({ day, key, logs, otherMonth, dayIndex }) {
     cell.classList.add("saturday");
   }
 
-  const daySummary = makeDaySummary(logs, key);
+  const daySummary = makeDaySummary(summary);
 
   cell.innerHTML = `
     <span class="day-number">${day}</span>
@@ -416,29 +401,14 @@ function makeDayCell({ day, key, logs, otherMonth, dayIndex }) {
   return cell;
 }
 
-function makeDaySummary(logs, key) {
-  const allLogs = [...logs];
-
-  if (
-    currentLog &&
-    currentLog.work_date === key &&
-    !allLogs.some((log) => log.id === currentLog.id)
-  ) {
-    allLogs.push(currentLog);
-  }
-
-  if (allLogs.length === 0) {
+function makeDaySummary(summary) {
+  if (!summary) {
     return "";
   }
 
-  const totalSeconds = allLogs.reduce(
-    (total, log) => total + Number(log.duration_seconds || 0),
-    0,
-  );
-
   return `
-    <span class="day-summary-duration">총 ${formatDurationShort(totalSeconds)}</span>
-    <span class="day-summary-count">로그 ${allLogs.length}개</span>
+    <span class="day-summary-duration">총 ${formatDurationShort(summary.total_duration_seconds)}</span>
+    <span class="day-summary-count">로그 ${summary.log_count}개</span>
   `;
 }
 
