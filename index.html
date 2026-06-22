@@ -31,6 +31,37 @@
 
       <p id="loginMessage" class="message" aria-live="polite"></p>
     </section>
+    <div id="dayModal" class="modal-backdrop hidden">
+    <section class="day-modal">
+      <header class="modal-header">
+        <div>
+          <p class="modal-label">선택 날짜</p>
+          <h2 id="modalDateTitle">-</h2>
+        </div>
+
+        <div class="modal-actions">
+          <button id="manualOpenBtn" class="manual-button" type="button">임의 설정</button>
+          <button id="modalCloseBtn" class="modal-close-button" type="button">×</button>
+        </div>
+      </header>
+
+      <form id="manualForm" class="manual-form hidden">
+        <label>
+          시작
+          <input id="manualStartTime" type="time" required />
+        </label>
+
+        <label>
+          종료
+          <input id="manualEndTime" type="time" required />
+        </label>
+
+        <button type="submit">추가</button>
+      </form>
+
+      <div id="modalLogList" class="modal-log-list"></div>
+    </section>
+  </div>
   </main>
 
   <script src="app.js"></script>

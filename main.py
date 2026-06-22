@@ -258,3 +258,91 @@ def debug_db(_: None = Depends(check_admin)):
             "error_type": type(e).__name__,
             "error": str(e),
         }
+
+class ManualLogRequest(BaseModel):
+    work_date: date
+    start_time: str
+    end_time: str
+
+
+@app.post("/logs/manual")
+def add_manual_log(
+    data: ManualLogRequest,
+    _: None = Depends(check_admin),
+):
+    try:
+        start_hour, start_minute = map(int, data.start_time.split(":"))
+        end_hour, end_minute = map(int, data.end_time.split(":"))
+
+        start_local = datetime(
+            data.work_date.year,
+            data.work_date.month,
+            data.work_date.day,
+            start_hour,
+            start_minute,
+            tzinfo=KST,
+        )
+
+        end_local = datetime(
+            data.work_date.year,
+            data.work_date.month,
+            data.work_date.day,
+            end_hour,
+            end_minute,
+            tzinfo=KST,
+        )
+
+        if end_local <= start_local:
+            raise HTTPException(
+                status_code=400,
+                detail="종료 시각은 시작 시각보다 뒤여야 합니다.",
+            )
+
+        duration = int((end_local - start_local).total_seconds())
+
+        res = (
+            db.table("time_logs")
+            .insert({
+                "work_date": data.work_date.isoformat(),
+                "start_time": start_local.astimezone(timezone.utc).isoformat(),
+                "end_time": end_local.astimezone(timezone.utc).isoformat(),
+                "duration_seconds": duration,
+                "status": "COMPLETED",
+            })
+            .execute()
+        )
+
+        return res.data[0]
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"수동 로그 추가 실패: {type(e).__name__}: {str(e)}",
+        )
+
+@app.delete("/logs/{log_id}")
+def delete_log(
+    log_id: int,
+    _: None = Depends(check_admin),
+):
+    try:
+        res = (
+            db.table("time_logs")
+            .delete()
+            .eq("id", log_id)
+            .execute()
+        )
+
+        return {
+            "ok": True,
+            "deleted": res.data,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"로그 삭제 실패: {type(e).__name__}: {str(e)}",
+        )

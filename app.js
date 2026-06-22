@@ -378,10 +378,11 @@ function makeDayCell({ day, key, logs, otherMonth, dayIndex }) {
   `;
 
   if (!otherMonth) {
-    cell.addEventListener("click", () => {
+    cell.addEventListener("click", async () => {
       selectedDate = key;
       renderHeader();
       renderCalendar();
+      await openDayModal(key);
     });
   } else {
     cell.disabled = true;
