@@ -158,6 +158,7 @@ let selectedDate = todayKey();
 let monthLogs = [];
 let currentLog = null;
 let actionPending = false;
+let pendingDeleteLogId = null;
 
 async function setupCalendarPage() {
   if (!$("#calendarGrid")) return;
@@ -207,11 +208,22 @@ async function setupCalendarPage() {
     $("#manualForm").classList.toggle("hidden");
   });
   $("#manualForm").addEventListener("submit", addManualLog);
+  $("#deleteConfirmNo").addEventListener("click", closeDeleteConfirm);
+  $("#deleteConfirmYes").addEventListener("click", confirmDeleteLog);
+  $("#deleteConfirmDialog").addEventListener("click", (event) => {
+    if (event.target === $("#deleteConfirmDialog")) closeDeleteConfirm();
+  });
   $("#dayModal").addEventListener("click", (event) => {
     if (event.target === $("#dayModal")) closeDayModal();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeDayModal();
+    if (event.key !== "Escape") return;
+
+    if (!$("#deleteConfirmDialog").classList.contains("hidden")) {
+      closeDeleteConfirm();
+    } else {
+      closeDayModal();
+    }
   });
 
   await refreshAll();
@@ -467,6 +479,7 @@ async function openDayModal(key) {
 
 function closeDayModal() {
   const modal = $("#dayModal");
+  closeDeleteConfirm();
   if (modal) modal.classList.add("hidden");
 }
 
@@ -507,16 +520,14 @@ function renderDayLogs(logs) {
     copy.append(time, duration);
     row.appendChild(copy);
 
-    if (log.status !== "RUNNING") {
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.className = "delete-log-button";
-      deleteButton.textContent = "×";
-      deleteButton.title = "로그 삭제";
-      deleteButton.setAttribute("aria-label", "로그 삭제");
-      deleteButton.addEventListener("click", () => deleteLog(log.id));
-      row.appendChild(deleteButton);
-    }
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "delete-log-button";
+    deleteButton.textContent = "×";
+    deleteButton.title = "로그 삭제";
+    deleteButton.setAttribute("aria-label", "로그 삭제");
+    deleteButton.addEventListener("click", () => openDeleteConfirm(log.id));
+    row.appendChild(deleteButton);
 
     list.appendChild(row);
   }
@@ -547,16 +558,39 @@ async function addManualLog(event) {
   }
 }
 
-async function deleteLog(logId) {
-  if (!window.confirm("이 로그를 삭제할까요?")) return;
+function openDeleteConfirm(logId) {
+  pendingDeleteLogId = logId;
+  $("#deleteConfirmDialog").classList.remove("hidden");
+  $("#deleteConfirmNo").focus();
+}
+
+function closeDeleteConfirm() {
+  pendingDeleteLogId = null;
+  const dialog = $("#deleteConfirmDialog");
+  if (dialog) dialog.classList.add("hidden");
+}
+
+async function confirmDeleteLog() {
+  if (pendingDeleteLogId === null) return;
+
+  const logId = pendingDeleteLogId;
+  const yesButton = $("#deleteConfirmYes");
+  const noButton = $("#deleteConfirmNo");
+  yesButton.disabled = true;
+  noButton.disabled = true;
   setModalMessage("");
 
   try {
     await api(`/logs/${logId}`, { method: "DELETE" });
+    closeDeleteConfirm();
     await refreshAll();
     await loadDayLogs(selectedDate);
   } catch (error) {
+    closeDeleteConfirm();
     setModalMessage(error.message);
+  } finally {
+    yesButton.disabled = false;
+    noButton.disabled = false;
   }
 }
 
