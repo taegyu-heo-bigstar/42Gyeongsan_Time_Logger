@@ -395,11 +395,11 @@ function makeDayCell({ day, key, logs, otherMonth, dayIndex }) {
     cell.classList.add("saturday");
   }
 
-  const logRows = makeLogRows(logs, key);
+  const daySummary = makeDaySummary(logs, key);
 
   cell.innerHTML = `
     <span class="day-number">${day}</span>
-    <div class="log-stack">${logRows}</div>
+    <div class="day-summary">${daySummary}</div>
   `;
 
   if (!otherMonth) {
@@ -416,7 +416,7 @@ function makeDayCell({ day, key, logs, otherMonth, dayIndex }) {
   return cell;
 }
 
-function makeLogRows(logs, key) {
+function makeDaySummary(logs, key) {
   const allLogs = [...logs];
 
   if (
@@ -431,30 +431,15 @@ function makeLogRows(logs, key) {
     return "";
   }
 
-  const visibleLogs = allLogs.slice(0, 3);
-  const hiddenCount = allLogs.length - visibleLogs.length;
+  const totalSeconds = allLogs.reduce(
+    (total, log) => total + Number(log.duration_seconds || 0),
+    0,
+  );
 
-  const rows = visibleLogs.map((log) => {
-    const statusClass =
-      log.status === "RUNNING"
-        ? "running"
-        : log.status === "AUTO_STOPPED"
-          ? "auto"
-          : "completed";
-
-    const text =
-      log.status === "RUNNING"
-        ? `${formatTime(log.start_time)} ~ 진행 중`
-        : `${formatTime(log.start_time)} · ${formatDurationShort(log.duration_seconds)}`;
-
-    return `<span class="log-row ${statusClass}" title="${text}">${text}</span>`;
-  });
-
-  if (hiddenCount > 0) {
-    rows.push(`<span class="more-log">+${hiddenCount}개 더</span>`);
-  }
-
-  return rows.join("");
+  return `
+    <span class="day-summary-duration">총 ${formatDurationShort(totalSeconds)}</span>
+    <span class="day-summary-count">로그 ${allLogs.length}개</span>
+  `;
 }
 
 function setActionPending(pending) {

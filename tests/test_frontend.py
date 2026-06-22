@@ -29,3 +29,13 @@ def test_delete_confirmation_has_explicit_choices():
 def test_every_rendered_log_gets_a_delete_button():
     assert 'deleteButton.textContent = "×"' in JAVASCRIPT
     assert "openDeleteConfirm(log.id)" in JAVASCRIPT
+
+
+def test_calendar_cells_render_only_daily_summary():
+    summary_function = JAVASCRIPT.split("function makeDaySummary", 1)[1].split(
+        "function setActionPending", 1
+    )[0]
+    assert 'class="day-summary-duration"' in summary_function
+    assert 'class="day-summary-count"' in summary_function
+    assert "formatTime(" not in summary_function
+    assert "log.start_time" not in summary_function

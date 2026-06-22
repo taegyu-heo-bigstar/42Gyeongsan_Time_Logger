@@ -189,44 +189,35 @@ button:disabled {
   color: #a4a8ae;
 }
 
-.log-stack {
+.day-summary {
   display: grid;
-  gap: 5px;
+  gap: 6px;
   margin-top: 8px;
+  text-align: center;
 }
 
-.log-row {
+.day-summary-duration,
+.day-summary-count {
   display: block;
   width: 100%;
-  padding: 5px 8px;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.log-row.completed {
+.day-summary-duration {
+  padding: 7px 8px;
+  border-radius: 6px;
   background: var(--completed-bg);
   color: #1d4ed8;
-}
-
-.log-row.running {
-  background: var(--running-bg);
-  color: #dc2626;
-}
-
-.log-row.auto {
-  background: var(--auto-bg);
-  color: #b45309;
-}
-
-.more-log {
-  color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
-  padding-left: 4px;
+}
+
+.day-summary-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .control-panel {
