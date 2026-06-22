@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>캘린더 | 42Gyeongsan Time Logger</title>
-  <link rel="stylesheet" href="style.css?v=calendar-ui-3" />
+  <link rel="stylesheet" href="style.css?v=calendar-ui-4" />
 </head>
 <body>
   <main class="calendar-page">
@@ -60,8 +60,8 @@
       <p id="appMessage" class="message" aria-live="polite"></p>
     </footer>
 
-    <div id="dayModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalDateTitle">
-      <section class="day-modal">
+    <div id="dayModal" class="modal-backdrop hidden">
+      <aside class="day-modal" role="dialog" aria-modal="true" aria-labelledby="modalDateTitle">
         <header class="modal-header">
           <div>
             <p class="modal-label">선택 날짜</p>
@@ -80,11 +80,22 @@
         </form>
 
         <p id="modalMessage" class="message" aria-live="polite"></p>
-        <div id="modalLogList" class="modal-log-list"></div>
-      </section>
+        <div id="modalLogList" class="modal-log-list" tabindex="0"></div>
+      </aside>
+
+      <div id="deleteConfirmDialog" class="confirm-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="deleteConfirmTitle">
+        <section class="confirm-dialog">
+          <h3 id="deleteConfirmTitle">정말로 삭제하시겠습니까?</h3>
+          <p>삭제한 로그는 복구할 수 없습니다.</p>
+          <div class="confirm-actions">
+            <button id="deleteConfirmNo" class="confirm-no" type="button">아니오</button>
+            <button id="deleteConfirmYes" class="confirm-yes" type="button">예</button>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
 
-  <script src="app.js?v=calendar-ui-3"></script>
+  <script src="app.js?v=calendar-ui-4"></script>
 </body>
 </html>
