@@ -39,3 +39,9 @@ def test_calendar_cells_render_only_daily_summary():
     assert 'class="day-summary-count"' in summary_function
     assert "formatTime(" not in summary_function
     assert "log.start_time" not in summary_function
+
+
+def test_frontend_keeps_plain_password_out_of_browser_storage():
+    assert "sessionStorage" not in JAVASCRIPT
+    assert "X-Admin-Password" not in JAVASCRIPT
+    assert 'credentials: "include"' in JAVASCRIPT

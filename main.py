@@ -2,30 +2,51 @@ import os
 from datetime import date, datetime, time, timedelta, timezone
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client
+
+from security import create_session_token, verify_password, verify_session_token
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
+SESSION_SECRET = os.getenv("SESSION_SECRET")
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "28800"))
+SESSION_COOKIE_NAME = "time_logger_session"
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() != "false"
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
-if not SUPABASE_URL or not SUPABASE_KEY or not ADMIN_PASSWORD:
-    raise RuntimeError("SUPABASE_URL, SUPABASE_KEY, ADMIN_PASSWORD가 필요합니다.")
+if not SUPABASE_URL or not SUPABASE_KEY or not ADMIN_PASSWORD_HASH or not SESSION_SECRET:
+    raise RuntimeError(
+        "SUPABASE_URL, SUPABASE_KEY, ADMIN_PASSWORD_HASH, SESSION_SECRET가 필요합니다."
+    )
+
+if len(SESSION_SECRET) < 32:
+    raise RuntimeError("SESSION_SECRET는 32자 이상이어야 합니다.")
+
+if SESSION_TTL_SECONDS < 300 or SESSION_TTL_SECONDS > 86400:
+    raise RuntimeError("SESSION_TTL_SECONDS는 300~86400 범위여야 합니다.")
 
 db = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # toy project용
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
 
 KST = timezone(timedelta(hours=9))
 
@@ -38,9 +59,19 @@ class StartRequest(BaseModel):
     work_date: date | None = None
 
 
-def check_admin(x_admin_password: str = Header(default="", alias="X-Admin-Password")):
-    if x_admin_password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="관리자 비밀번호가 틀렸습니다.")
+def check_admin(request: Request):
+    token = request.cookies.get(SESSION_COOKIE_NAME, "")
+    if not verify_session_token(token, SESSION_SECRET):
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 def now_utc():
@@ -53,6 +84,19 @@ def parse_time(value):
 
 def local_date(dt):
     return dt.astimezone(KST).date()
+
+
+def auto_stop_cutoff(start):
+    start_local = start.astimezone(KST)
+    next_midnight_local = datetime.combine(
+        start_local.date() + timedelta(days=1),
+        time.min,
+        tzinfo=KST,
+    )
+    return min(
+        start + timedelta(hours=12),
+        next_midnight_local.astimezone(timezone.utc),
+    )
 
 
 def get_running_log():
@@ -70,7 +114,7 @@ def get_running_log():
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Supabase running log 조회 실패: {type(e).__name__}: {str(e)}"
+            detail=f"Supabase running log 조회 실패: {type(e).__name__}"
         )
 
 
@@ -81,24 +125,21 @@ def auto_stop_if_needed():
         return
 
     start = parse_time(log["start_time"])
-    now = now_utc()
-
-    over_12_hours = now - start >= timedelta(hours=12)
-    date_changed = local_date(start) != local_date(now)
-
-    if not over_12_hours and not date_changed:
+    cutoff = auto_stop_cutoff(start)
+    if now_utc() < cutoff:
         return
 
-    duration = int((now - start).total_seconds())
+    duration = int((cutoff - start).total_seconds())
 
     (
         db.table("time_logs")
         .update({
-            "end_time": now.isoformat(),
+            "end_time": cutoff.isoformat(),
             "duration_seconds": duration,
             "status": "AUTO_STOPPED",
         })
         .eq("id", log["id"])
+        .eq("status", "RUNNING")
         .execute()
     )
 
@@ -109,11 +150,37 @@ def root():
 
 
 @app.post("/login")
-def login(data: LoginRequest):
-    if data.password != ADMIN_PASSWORD:
+def login(data: LoginRequest, response: Response):
+    if not verify_password(data.password, ADMIN_PASSWORD_HASH):
         raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다.")
 
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=create_session_token(SESSION_SECRET, SESSION_TTL_SECONDS),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+    )
     return {"ok": True}
+
+
+@app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        secure=COOKIE_SECURE,
+        httponly=True,
+        samesite="lax",
+    )
+    return {"ok": True}
+
+
+@app.get("/session")
+def session(_: None = Depends(check_admin)):
+    return {"authenticated": True}
 
 
 @app.get("/logs/current")
@@ -198,7 +265,7 @@ def stop_log(_: None = Depends(check_admin)):
 
 @app.get("/logs/month")
 def month_logs(
-    year: int = Query(..., ge=1, le=9999),
+    year: int = Query(..., ge=1, le=9998),
     month: int = Query(..., ge=1, le=12),
     _: None = Depends(check_admin),
 ):
@@ -224,10 +291,20 @@ def month_logs(
     logs = res.data or []
     total = sum(log["duration_seconds"] or 0 for log in logs)
 
+    days = {}
+    for log in logs:
+        work_date = log["work_date"]
+        summary = days.setdefault(
+            work_date,
+            {"work_date": work_date, "log_count": 0, "total_duration_seconds": 0},
+        )
+        summary["log_count"] += 1
+        summary["total_duration_seconds"] += log["duration_seconds"] or 0
+
     return {
         "year": year,
         "month": month,
-        "logs": logs,
+        "days": list(days.values()),
         "total_duration_seconds": total,
     }
 
@@ -251,28 +328,6 @@ def day_logs(
         "work_date": work_date.isoformat(),
         "logs": res.data or [],
     }
-
-@app.get("/debug/db")
-def debug_db(_: None = Depends(check_admin)):
-    try:
-        res = (
-            db.table("time_logs")
-            .select("*")
-            .limit(1)
-            .execute()
-        )
-
-        return {
-            "ok": True,
-            "data": res.data,
-        }
-
-    except Exception as e:
-        return {
-            "ok": False,
-            "error_type": type(e).__name__,
-            "error": str(e),
-        }
 
 class ManualLogRequest(BaseModel):
     work_date: date
