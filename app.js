@@ -157,6 +157,7 @@ let currentMonthIndex;
 let selectedDate = todayKey();
 let monthLogs = [];
 let currentLog = null;
+let actionPending = false;
 
 async function setupCalendarPage() {
   if (!$("#calendarGrid")) return;
@@ -201,6 +202,17 @@ async function setupCalendarPage() {
 
   $("#startBtn").addEventListener("click", startLog);
   $("#stopBtn").addEventListener("click", stopLog);
+  $("#modalCloseBtn").addEventListener("click", closeDayModal);
+  $("#manualOpenBtn").addEventListener("click", () => {
+    $("#manualForm").classList.toggle("hidden");
+  });
+  $("#manualForm").addEventListener("submit", addManualLog);
+  $("#dayModal").addEventListener("click", (event) => {
+    if (event.target === $("#dayModal")) closeDayModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeDayModal();
+  });
 
   await refreshAll();
 }
@@ -236,6 +248,7 @@ async function refreshAll() {
 
     if (error.message.includes("비밀번호") || error.message.includes("401")) {
       clearPassword();
+      location.href = "index.html";
     }
   }
 }
@@ -264,10 +277,10 @@ function renderStatus() {
   if (currentLog) {
     runningStatus.textContent = `진행 중: ${currentLog.work_date} ${formatTime(currentLog.start_time)} 시작`;
     startBtn.disabled = true;
-    stopBtn.disabled = false;
+    stopBtn.disabled = actionPending;
   } else {
     runningStatus.textContent = "현재 진행 중인 로그가 없습니다.";
-    startBtn.disabled = false;
+    startBtn.disabled = actionPending;
     stopBtn.disabled = true;
   }
 }
@@ -432,7 +445,125 @@ function makeLogRows(logs, key) {
   return rows.join("");
 }
 
+function setActionPending(pending) {
+  actionPending = pending;
+  renderStatus();
+}
+
+function setModalMessage(text) {
+  $("#modalMessage").textContent = text || "";
+}
+
+async function openDayModal(key) {
+  const modal = $("#dayModal");
+  $("#modalDateTitle").textContent = formatDateKorean(key);
+  $("#manualForm").classList.add("hidden");
+  $("#manualStartTime").value = "09:00";
+  $("#manualEndTime").value = "18:00";
+  setModalMessage("");
+  modal.classList.remove("hidden");
+  await loadDayLogs(key);
+}
+
+function closeDayModal() {
+  const modal = $("#dayModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function loadDayLogs(key) {
+  const list = $("#modalLogList");
+  list.replaceChildren();
+
+  try {
+    const data = await api(`/logs/day?work_date=${encodeURIComponent(key)}`);
+    renderDayLogs(data.logs || []);
+  } catch (error) {
+    setModalMessage(error.message);
+  }
+}
+
+function renderDayLogs(logs) {
+  const list = $("#modalLogList");
+  list.replaceChildren();
+
+  if (logs.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-log-message";
+    empty.textContent = "기록된 시간이 없습니다.";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const log of logs) {
+    const row = document.createElement("div");
+    row.className = "modal-log-row";
+
+    const copy = document.createElement("div");
+    copy.className = "modal-log-copy";
+    const time = document.createElement("strong");
+    time.textContent = `${formatTime(log.start_time)} ~ ${formatTime(log.end_time)}`;
+    const duration = document.createElement("span");
+    duration.textContent = `${formatDuration(log.duration_seconds)} · ${log.status}`;
+    copy.append(time, duration);
+    row.appendChild(copy);
+
+    if (log.status !== "RUNNING") {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "delete-log-button";
+      deleteButton.textContent = "×";
+      deleteButton.title = "로그 삭제";
+      deleteButton.setAttribute("aria-label", "로그 삭제");
+      deleteButton.addEventListener("click", () => deleteLog(log.id));
+      row.appendChild(deleteButton);
+    }
+
+    list.appendChild(row);
+  }
+}
+
+async function addManualLog(event) {
+  event.preventDefault();
+  const submitButton = $("#manualSubmitBtn");
+  submitButton.disabled = true;
+  setModalMessage("");
+
+  try {
+    await api("/logs/manual", {
+      method: "POST",
+      body: JSON.stringify({
+        work_date: selectedDate,
+        start_time: $("#manualStartTime").value,
+        end_time: $("#manualEndTime").value,
+      }),
+    });
+    $("#manualForm").classList.add("hidden");
+    await refreshAll();
+    await loadDayLogs(selectedDate);
+  } catch (error) {
+    setModalMessage(error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function deleteLog(logId) {
+  if (!window.confirm("이 로그를 삭제할까요?")) return;
+  setModalMessage("");
+
+  try {
+    await api(`/logs/${logId}`, { method: "DELETE" });
+    await refreshAll();
+    await loadDayLogs(selectedDate);
+  } catch (error) {
+    setModalMessage(error.message);
+  }
+}
+
 async function startLog() {
+  if (actionPending) return;
+  setActionPending(true);
+
   try {
     setMessage("");
 
@@ -446,10 +577,15 @@ async function startLog() {
     await refreshAll();
   } catch (error) {
     setMessage(error.message);
+  } finally {
+    setActionPending(false);
   }
 }
 
 async function stopLog() {
+  if (actionPending) return;
+  setActionPending(true);
+
   try {
     setMessage("");
 
@@ -460,6 +596,8 @@ async function stopLog() {
     await refreshAll();
   } catch (error) {
     setMessage(error.message);
+  } finally {
+    setActionPending(false);
   }
 }
 

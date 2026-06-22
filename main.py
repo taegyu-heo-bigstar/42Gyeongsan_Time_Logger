@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -38,7 +38,7 @@ class StartRequest(BaseModel):
     work_date: date | None = None
 
 
-def check_admin(x_admin_password: str = Header(alias="X-Admin-Password")):
+def check_admin(x_admin_password: str = Header(default="", alias="X-Admin-Password")):
     if x_admin_password != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="관리자 비밀번호가 틀렸습니다.")
 
@@ -61,6 +61,7 @@ def get_running_log():
             db.table("time_logs")
             .select("*")
             .eq("status", "RUNNING")
+            .order("start_time")
             .limit(1)
             .execute()
         )
@@ -145,12 +146,22 @@ def start_log(
             .execute()
         )
 
+        if not res.data:
+            raise HTTPException(status_code=500, detail="로그 시작 결과를 확인할 수 없습니다.")
+
         return res.data[0]
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+
+        error_text = str(e).lower()
+        if "23505" in error_text or "time_logs_single_running_idx" in error_text:
+            raise HTTPException(status_code=409, detail="이미 진행 중인 로그가 있습니다.")
+
         raise HTTPException(
             status_code=500,
-            detail=f"Supabase 로그 시작 실패: {type(e).__name__}: {str(e)}"
+            detail=f"Supabase 로그 시작 실패: {type(e).__name__}"
         )
 
 
@@ -175,16 +186,20 @@ def stop_log(_: None = Depends(check_admin)):
             "status": "COMPLETED",
         })
         .eq("id", log["id"])
+        .eq("status", "RUNNING")
         .execute()
     )
+
+    if not res.data:
+        raise HTTPException(status_code=409, detail="로그 상태가 이미 변경되었습니다.")
 
     return res.data[0]
 
 
 @app.get("/logs/month")
 def month_logs(
-    year: int = Query(...),
-    month: int = Query(...),
+    year: int = Query(..., ge=1, le=9999),
+    month: int = Query(..., ge=1, le=12),
     _: None = Depends(check_admin),
 ):
     auto_stop_if_needed()
@@ -261,8 +276,8 @@ def debug_db(_: None = Depends(check_admin)):
 
 class ManualLogRequest(BaseModel):
     work_date: date
-    start_time: str
-    end_time: str
+    start_time: time
+    end_time: time
 
 
 @app.post("/logs/manual")
@@ -271,15 +286,13 @@ def add_manual_log(
     _: None = Depends(check_admin),
 ):
     try:
-        start_hour, start_minute = map(int, data.start_time.split(":"))
-        end_hour, end_minute = map(int, data.end_time.split(":"))
-
         start_local = datetime(
             data.work_date.year,
             data.work_date.month,
             data.work_date.day,
-            start_hour,
-            start_minute,
+            data.start_time.hour,
+            data.start_time.minute,
+            data.start_time.second,
             tzinfo=KST,
         )
 
@@ -287,8 +300,9 @@ def add_manual_log(
             data.work_date.year,
             data.work_date.month,
             data.work_date.day,
-            end_hour,
-            end_minute,
+            data.end_time.hour,
+            data.end_time.minute,
+            data.end_time.second,
             tzinfo=KST,
         )
 
@@ -312,6 +326,9 @@ def add_manual_log(
             .execute()
         )
 
+        if not res.data:
+            raise HTTPException(status_code=500, detail="수동 로그 저장 결과를 확인할 수 없습니다.")
+
         return res.data[0]
 
     except HTTPException:
@@ -320,7 +337,7 @@ def add_manual_log(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"수동 로그 추가 실패: {type(e).__name__}: {str(e)}",
+            detail=f"수동 로그 추가 실패: {type(e).__name__}",
         )
 
 @app.delete("/logs/{log_id}")
@@ -336,13 +353,19 @@ def delete_log(
             .execute()
         )
 
+        if not res.data:
+            raise HTTPException(status_code=404, detail="삭제할 로그를 찾을 수 없습니다.")
+
         return {
             "ok": True,
             "deleted": res.data,
         }
 
+    except HTTPException:
+        raise
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"로그 삭제 실패: {type(e).__name__}: {str(e)}",
+            detail=f"로그 삭제 실패: {type(e).__name__}",
         )

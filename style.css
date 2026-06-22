@@ -137,7 +137,6 @@ button:disabled {
   padding: 18px 14px 10px;
   text-align: left;
   overflow: hidden;
-}overflow: hidden;
 }
 
 .day-cell:not(.empty):hover {
@@ -340,6 +339,151 @@ button:disabled {
   font-weight: 800;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.55);
+}
+
+.day-modal {
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100vh - 40px));
+  overflow-y: auto;
+  padding: 24px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.modal-header,
+.modal-actions,
+.modal-log-row {
+  display: flex;
+  align-items: center;
+}
+
+.modal-header,
+.modal-log-row {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.modal-label {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.modal-actions {
+  gap: 8px;
+}
+
+.manual-button,
+.modal-close-button,
+.delete-log-button,
+.manual-form button {
+  border: 0;
+  font-weight: 800;
+}
+
+.manual-button,
+.manual-form button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 6px;
+  background: var(--primary);
+  color: #fff;
+}
+
+.modal-close-button {
+  width: 40px;
+  height: 40px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 28px;
+}
+
+.manual-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: 10px;
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.manual-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.manual-form input {
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.modal-log-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.modal-log-row {
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.modal-log-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.modal-log-copy span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.delete-log-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 20px;
+}
+
+.empty-log-message {
+  margin: 12px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* login page */
 .login-page {
   min-height: 100vh;
@@ -438,5 +582,13 @@ button:disabled {
 
   .total-card {
     font-size: 20px;
+  }
+
+  .manual-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .manual-form button {
+    grid-column: 1 / -1;
   }
 }
