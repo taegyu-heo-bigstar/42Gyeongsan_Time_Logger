@@ -15,6 +15,7 @@ CSRF_HEADER_NAME = "X-Requested-With"
 CSRF_HEADER_VALUE = "time-logger"
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5
+LOGIN_RATE_LIMIT_MAX_KEYS = 256
 login_failures: dict[str, list[float]] = {}
 
 db = create_client(settings.supabase_url, settings.supabase_key)
@@ -68,6 +69,7 @@ def login_rate_limit_key(request: Request):
 def too_many_login_failures(key: str):
     now = monotonic_time.monotonic()
     cutoff = now - LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    prune_login_failures(cutoff)
     failures = [timestamp for timestamp in login_failures.get(key, []) if timestamp > cutoff]
     login_failures[key] = failures
     return len(failures) >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS
@@ -75,10 +77,28 @@ def too_many_login_failures(key: str):
 
 def record_login_failure(key: str):
     login_failures.setdefault(key, []).append(monotonic_time.monotonic())
+    if len(login_failures) <= LOGIN_RATE_LIMIT_MAX_KEYS:
+        return
+
+    oldest_keys = sorted(
+        login_failures,
+        key=lambda failure_key: login_failures[failure_key][-1],
+    )
+    for failure_key in oldest_keys[: len(login_failures) - LOGIN_RATE_LIMIT_MAX_KEYS]:
+        login_failures.pop(failure_key, None)
 
 
 def clear_login_failures(key: str):
     login_failures.pop(key, None)
+
+
+def prune_login_failures(cutoff: float):
+    for failure_key, timestamps in list(login_failures.items()):
+        fresh_timestamps = [timestamp for timestamp in timestamps if timestamp > cutoff]
+        if fresh_timestamps:
+            login_failures[failure_key] = fresh_timestamps
+        else:
+            login_failures.pop(failure_key, None)
 
 
 def now_utc():
@@ -180,7 +200,10 @@ def login(data: LoginRequest, request: Request, response: Response):
 
 
 @app.post("/logout")
-def logout(response: Response):
+def logout(
+    response: Response,
+    _: None = Depends(check_csrf_header),
+):
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         path="/",

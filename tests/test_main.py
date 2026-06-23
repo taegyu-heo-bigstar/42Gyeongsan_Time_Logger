@@ -133,11 +133,29 @@ def test_login_rate_limits_repeated_failures():
     main.login_failures.clear()
 
 
+def test_login_failure_cache_is_bounded(monkeypatch):
+    main.login_failures.clear()
+    monkeypatch.setattr(main, "LOGIN_RATE_LIMIT_MAX_KEYS", 3)
+
+    for index in range(5):
+        main.record_login_failure(f"host-{index}")
+
+    assert len(main.login_failures) == 3
+    assert set(main.login_failures) == {"host-2", "host-3", "host-4"}
+
+    main.login_failures.clear()
+
+
 def test_logout_invalidates_session():
     client = make_authenticated_client()
     assert client.get("/session").status_code == 200
-    assert client.post("/logout").status_code == 200
+    assert client.post("/logout", headers=csrf_headers()).status_code == 200
     assert client.get("/session").status_code == 401
+
+
+def test_logout_requires_csrf_header():
+    client = make_authenticated_client()
+    assert client.post("/logout").status_code == 403
 
 
 def test_month_rejects_out_of_range_value():
