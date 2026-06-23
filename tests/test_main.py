@@ -91,6 +91,10 @@ def make_authenticated_client():
     return client
 
 
+def csrf_headers():
+    return {"X-Requested-With": "time-logger"}
+
+
 def test_admin_endpoint_requires_password():
     client = make_client()
     response = client.get("/logs/current")
@@ -116,6 +120,19 @@ def test_wrong_password_does_not_create_session():
     assert "time_logger_session=" not in response.headers.get("set-cookie", "")
 
 
+def test_login_rate_limits_repeated_failures():
+    client = make_client()
+    main.login_failures.clear()
+
+    for _ in range(5):
+        assert client.post("/login", json={"password": "wrong-password"}).status_code == 401
+
+    response = client.post("/login", json={"password": "wrong-password"})
+    assert response.status_code == 429
+
+    main.login_failures.clear()
+
+
 def test_logout_invalidates_session():
     client = make_authenticated_client()
     assert client.get("/session").status_code == 200
@@ -127,6 +144,12 @@ def test_month_rejects_out_of_range_value():
     client = make_authenticated_client()
     response = client.get("/logs/month?year=2026&month=13")
     assert response.status_code == 422
+
+
+def test_mutating_log_endpoint_requires_csrf_header():
+    client = make_authenticated_client()
+    response = client.post("/logs/start", json={})
+    assert response.status_code == 403
 
 
 def test_month_returns_summaries_instead_of_raw_logs():
@@ -143,6 +166,7 @@ def test_manual_log_rejects_invalid_time_format():
     client = make_authenticated_client()
     response = client.post(
         "/logs/manual",
+        headers=csrf_headers(),
         json={
             "work_date": "2026-06-22",
             "start_time": "not-a-time",
@@ -156,6 +180,7 @@ def test_manual_log_rejects_end_before_start():
     client = make_authenticated_client()
     response = client.post(
         "/logs/manual",
+        headers=csrf_headers(),
         json={
             "work_date": "2026-06-22",
             "start_time": "18:00",
@@ -167,7 +192,7 @@ def test_manual_log_rejects_end_before_start():
 
 def test_start_translates_unique_constraint_to_conflict():
     client = make_authenticated_client()
-    response = client.post("/logs/start", json={})
+    response = client.post("/logs/start", json={}, headers=csrf_headers())
     assert response.status_code == 409
     assert response.json()["detail"] == "이미 진행 중인 로그가 있습니다."
 

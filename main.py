@@ -1,68 +1,47 @@
-import os
+import time as monotonic_time
 from datetime import date, datetime, time, timedelta, timezone
 
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from supabase import create_client
 
+from config import load_settings
+from schemas import LoginRequest, ManualLogRequest, StartRequest
 from security import create_session_token, verify_password, verify_session_token
 
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
-SESSION_SECRET = os.getenv("SESSION_SECRET")
-SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "28800"))
+settings = load_settings()
 SESSION_COOKIE_NAME = "time_logger_session"
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() != "false"
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
-    if origin.strip()
-]
+CSRF_HEADER_NAME = "X-Requested-With"
+CSRF_HEADER_VALUE = "time-logger"
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
+LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5
+login_failures: dict[str, list[float]] = {}
 
-if not SUPABASE_URL or not SUPABASE_KEY or not ADMIN_PASSWORD_HASH or not SESSION_SECRET:
-    raise RuntimeError(
-        "SUPABASE_URL, SUPABASE_KEY, ADMIN_PASSWORD_HASH, SESSION_SECRET가 필요합니다."
-    )
-
-if len(SESSION_SECRET) < 32:
-    raise RuntimeError("SESSION_SECRET는 32자 이상이어야 합니다.")
-
-if SESSION_TTL_SECONDS < 300 or SESSION_TTL_SECONDS > 86400:
-    raise RuntimeError("SESSION_TTL_SECONDS는 300~86400 범위여야 합니다.")
-
-db = create_client(SUPABASE_URL, SUPABASE_KEY)
+db = create_client(settings.supabase_url, settings.supabase_key)
 
 app = FastAPI()
 
-if ALLOWED_ORIGINS:
+if settings.allowed_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
+        allow_origins=settings.allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", CSRF_HEADER_NAME],
     )
 
 KST = timezone(timedelta(hours=9))
 
 
-class LoginRequest(BaseModel):
-    password: str
-
-
-class StartRequest(BaseModel):
-    work_date: date | None = None
-
-
 def check_admin(request: Request):
     token = request.cookies.get(SESSION_COOKIE_NAME, "")
-    if not verify_session_token(token, SESSION_SECRET):
+    if not verify_session_token(token, settings.session_secret):
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+
+def check_csrf_header(request: Request):
+    if request.headers.get(CSRF_HEADER_NAME) != CSRF_HEADER_VALUE:
+        raise HTTPException(status_code=403, detail="요청을 확인할 수 없습니다.")
 
 
 @app.middleware("http")
@@ -71,7 +50,35 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'; "
+        "script-src 'self'; "
+        "style-src 'self'"
+    )
     return response
+
+
+def login_rate_limit_key(request: Request):
+    return request.client.host if request.client else "unknown"
+
+
+def too_many_login_failures(key: str):
+    now = monotonic_time.monotonic()
+    cutoff = now - LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    failures = [timestamp for timestamp in login_failures.get(key, []) if timestamp > cutoff]
+    login_failures[key] = failures
+    return len(failures) >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+
+
+def record_login_failure(key: str):
+    login_failures.setdefault(key, []).append(monotonic_time.monotonic())
+
+
+def clear_login_failures(key: str):
+    login_failures.pop(key, None)
 
 
 def now_utc():
@@ -150,16 +157,22 @@ def root():
 
 
 @app.post("/login")
-def login(data: LoginRequest, response: Response):
-    if not verify_password(data.password, ADMIN_PASSWORD_HASH):
+def login(data: LoginRequest, request: Request, response: Response):
+    rate_limit_key = login_rate_limit_key(request)
+    if too_many_login_failures(rate_limit_key):
+        raise HTTPException(status_code=429, detail="잠시 후 다시 시도해주세요.")
+
+    if not verify_password(data.password, settings.admin_password_hash):
+        record_login_failure(rate_limit_key)
         raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다.")
 
+    clear_login_failures(rate_limit_key)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=create_session_token(SESSION_SECRET, SESSION_TTL_SECONDS),
-        max_age=SESSION_TTL_SECONDS,
+        value=create_session_token(settings.session_secret, settings.session_ttl_seconds),
+        max_age=settings.session_ttl_seconds,
         httponly=True,
-        secure=COOKIE_SECURE,
+        secure=settings.cookie_secure,
         samesite="lax",
         path="/",
     )
@@ -171,7 +184,7 @@ def logout(response: Response):
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         path="/",
-        secure=COOKIE_SECURE,
+        secure=settings.cookie_secure,
         httponly=True,
         samesite="lax",
     )
@@ -193,6 +206,7 @@ def current_log(_: None = Depends(check_admin)):
 def start_log(
     data: StartRequest | None = None,
     _: None = Depends(check_admin),
+    __: None = Depends(check_csrf_header),
 ):
     auto_stop_if_needed()
 
@@ -233,7 +247,10 @@ def start_log(
 
 
 @app.post("/logs/stop")
-def stop_log(_: None = Depends(check_admin)):
+def stop_log(
+    _: None = Depends(check_admin),
+    __: None = Depends(check_csrf_header),
+):
     auto_stop_if_needed()
 
     log = get_running_log()
@@ -329,16 +346,11 @@ def day_logs(
         "logs": res.data or [],
     }
 
-class ManualLogRequest(BaseModel):
-    work_date: date
-    start_time: time
-    end_time: time
-
-
 @app.post("/logs/manual")
 def add_manual_log(
     data: ManualLogRequest,
     _: None = Depends(check_admin),
+    __: None = Depends(check_csrf_header),
 ):
     try:
         start_local = datetime(
@@ -399,6 +411,7 @@ def add_manual_log(
 def delete_log(
     log_id: int,
     _: None = Depends(check_admin),
+    __: None = Depends(check_csrf_header),
 ):
     try:
         res = (

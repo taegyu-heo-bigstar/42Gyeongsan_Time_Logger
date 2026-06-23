@@ -3,10 +3,14 @@ const API_BASE = "";
 const $ = (selector) => document.querySelector(selector);
 
 async function api(path, options = {}) {
-  const headers = options.headers || {};
+  const headers = { ...(options.headers || {}) };
 
   if (options.body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
+  }
+
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(options.method || "GET")) {
+    headers["X-Requested-With"] = "time-logger";
   }
 
   let response;
@@ -112,7 +116,7 @@ function setupLoginPage() {
     event.preventDefault();
     setMessage("");
 
-    const password = $("#password").value.trim();
+    const password = $("#password").value;
 
     try {
       const response = await fetch(`${API_BASE}/login`, {

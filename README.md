@@ -53,6 +53,10 @@ The application does not keep a reusable password in browser storage. Session
 cookies expire after `SESSION_TTL_SECONDS` and are `HttpOnly`, `Secure`, and
 `SameSite=Lax` in production.
 
+Authenticated write requests also require the `X-Requested-With: time-logger`
+header. This gives the cookie-based session a small CSRF guard while keeping the
+single-user deployment simple.
+
 ## Supabase concurrency constraint
 
 The API relies on a partial unique index to guarantee that only one log can
@@ -72,7 +76,8 @@ RLS is intentionally outside this project's current single-user scope.
 
 Process-local counters are unreliable on Vercel serverless instances. Configure
 a Vercel Firewall rate-limit rule for `POST /login`, for example 5 requests per
-minute per IP. Keep the API response identical for all failed passwords.
+minute per IP. The API also keeps a small in-process failed-login limiter as a
+backup, but the Vercel Firewall rule should remain the production control.
 
 ## Tests
 

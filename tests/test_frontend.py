@@ -45,3 +45,14 @@ def test_frontend_keeps_plain_password_out_of_browser_storage():
     assert "sessionStorage" not in JAVASCRIPT
     assert "X-Admin-Password" not in JAVASCRIPT
     assert 'credentials: "include"' in JAVASCRIPT
+
+
+def test_password_input_is_not_trimmed_before_login():
+    login_handler = JAVASCRIPT.split("function setupLoginPage", 1)[1].split(
+        "/* calendar page */", 1
+    )[0]
+    assert ".trim()" not in login_handler
+
+
+def test_mutating_requests_include_csrf_header():
+    assert '"X-Requested-With"] = "time-logger"' in JAVASCRIPT
